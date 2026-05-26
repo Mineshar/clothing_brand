@@ -1,4 +1,14 @@
 <?php
+session_start();
+
+// 🔐 ACCESS CONTROL (ADMIN + CUSTOMER ONLY)
+if (!isset($_SESSION['role']) ||
+   ($_SESSION['role'] != "admin" && $_SESSION['role'] != "customer")) {
+
+    header("Location: login.php");
+    exit();
+}
+
 include("db.php");
 
 $message = "";
@@ -11,6 +21,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $color      = htmlspecialchars(trim($_POST['color'] ?? ''));
     $size       = htmlspecialchars(trim($_POST['size'] ?? ''));
     $price      = htmlspecialchars(trim($_POST['price'] ?? ''));
+    $stock      = htmlspecialchars(trim($_POST['stock'] ?? ''));
 
     // VALIDATION
     if (
@@ -18,38 +29,104 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         empty($category) ||
         empty($color) ||
         empty($size) ||
-        empty($price)
+        empty($price) ||
+        empty($stock)
     ) {
-
         $message = "All fields are required!";
         $message_type = "error";
 
     } elseif (!is_numeric($price)) {
-
         $message = "Price must be numeric!";
+        $message_type = "error";
+
+    } elseif (!is_numeric($stock)) {
+        $message = "Stock must be numeric!";
         $message_type = "error";
 
     } else {
 
-        // INSERT DATA
-        $stmt = $conn->prepare("INSERT INTO laruga_villarobe 
-        (brand_name, category, color, size, price) 
-        VALUES (?, ?, ?, ?, ?)");
+        // 🔎 CHECK IF PRODUCT ALREADY EXISTS
+        $check = $conn->prepare("
+            SELECT id, stock 
+            FROM laruga_villarobe
+            WHERE brand_name = ?
+            AND category = ?
+            AND color = ?
+            AND size = ?
+        ");
 
-        $stmt->bind_param("ssssd", $brand_name, $category, $color, $size, $price);
+        $check->bind_param(
+            "ssss",
+            $brand_name,
+            $category,
+            $color,
+            $size
+        );
 
-        if ($stmt->execute()) {
+        $check->execute();
+        $result = $check->get_result();
 
-            $message = "Clothing brand added successfully!";
-            $message_type = "success";
+        // 🔁 IF EXISTS → UPDATE STOCK
+        if ($result->num_rows > 0) {
+
+            $row = $result->fetch_assoc();
+
+            $new_stock = $row['stock'] + $stock;
+
+            $update = $conn->prepare("
+                UPDATE laruga_villarobe
+                SET stock = ?, price = ?
+                WHERE id = ?
+            ");
+
+            $update->bind_param(
+                "idi",
+                $new_stock,
+                $price,
+                $row['id']
+            );
+
+            if ($update->execute()) {
+                $message = "✅ Product already exists! Stock updated successfully.";
+                $message_type = "success";
+            } else {
+                $message = "❌ Failed to update stock.";
+                $message_type = "error";
+            }
+
+            $update->close();
 
         } else {
 
-            $message = "Database Error: " . $stmt->error;
-            $message_type = "error";
+            // ➕ INSERT NEW PRODUCT
+            $stmt = $conn->prepare("
+                INSERT INTO laruga_villarobe
+                (brand_name, category, color, size, price, stock)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ");
+
+            $stmt->bind_param(
+                "ssssdi",
+                $brand_name,
+                $category,
+                $color,
+                $size,
+                $price,
+                $stock
+            );
+
+            if ($stmt->execute()) {
+                $message = "✅ New product added successfully!";
+                $message_type = "success";
+            } else {
+                $message = "❌ Database Error: " . $stmt->error;
+                $message_type = "error";
+            }
+
+            $stmt->close();
         }
 
-        $stmt->close();
+        $check->close();
     }
 }
 ?>
@@ -58,189 +135,97 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <html>
 <head>
 
-    <title>Add Clothing Brand</title>
+<title>Add Clothing Product</title>
 
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-    <style>
+<style>
 
-        *{
-            margin:0;
-            padding:0;
-            box-sizing:border-box;
-            font-family:'Poppins', sans-serif;
-        }
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Poppins', sans-serif;
+}
 
-        body{
-            min-height:100vh;
-            display:flex;
-            justify-content:center;
-            align-items:center;
-            padding:20px;
+body{
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:20px;
+    background:
+    linear-gradient(rgba(0,0,0,0.65), rgba(0,0,0,0.65)),
+    url('https://images.unsplash.com/photo-1441986300917-64674bd600d8?q=80&w=1400&auto=format&fit=crop');
+    background-size:cover;
+    background-position:center;
+}
 
-            background:
-            linear-gradient(rgba(0,0,0,0.65), rgba(0,0,0,0.65)),
-            url('https://images.unsplash.com/photo-1441986300917-64674bd600d8?q=80&w=1400&auto=format&fit=crop');
+.container{
+    width:450px;
+    padding:35px;
+    border-radius:22px;
+    background: rgba(255,255,255,0.12);
+    backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,0.2);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
 
-            background-size:cover;
-            background-position:center;
-            background-repeat:no-repeat;
-        }
+h2{
+    text-align:center;
+    color:#fff;
+    margin-bottom:20px;
+}
 
-        .container{
-            width:430px;
-            background:rgba(255,255,255,0.95);
-            backdrop-filter:blur(10px);
-            padding:30px;
-            border-radius:20px;
-            box-shadow:0 10px 30px rgba(0,0,0,0.4);
-        }
+label{
+    color:#fff;
+    font-size:13px;
+}
 
-        h2{
-            text-align:center;
-            margin-bottom:25px;
-            color:#111;
-            font-size:28px;
-        }
+input, select{
+    width:100%;
+    padding:10px;
+    margin:6px 0 12px;
+    border-radius:10px;
+    border:none;
+    outline:none;
+}
 
-        label{
-            display:block;
-            margin-top:15px;
-            margin-bottom:6px;
-            font-weight:500;
-            color:#333;
-        }
+button{
+    width:100%;
+    padding:12px;
+    border:none;
+    border-radius:10px;
+    background:linear-gradient(135deg,#3b82f6,#8b5cf6);
+    color:white;
+    font-weight:bold;
+    cursor:pointer;
+}
 
-        input,
-        select{
-            width:100%;
-            padding:13px;
-            border:1px solid #ccc;
-            border-radius:10px;
-            outline:none;
-            transition:0.3s;
-            font-size:14px;
-        }
+.message{
+    padding:10px;
+    margin-bottom:10px;
+    border-radius:10px;
+    color:white;
+}
 
-        input:focus,
-        select:focus{
-            border-color:#000;
-            box-shadow:0 0 8px rgba(0,0,0,0.2);
-        }
+.success{ background:green; }
+.error{ background:red; }
 
-        button{
-            width:100%;
-            padding:14px;
-            margin-top:25px;
-            border:none;
-            border-radius:12px;
-            background:#111;
-            color:white;
-            font-size:16px;
-            font-weight:600;
-            cursor:pointer;
-            transition:0.3s;
-        }
+.back, .logout{
+    display:block;
+    text-align:center;
+    margin-top:10px;
+    padding:10px;
+    border-radius:10px;
+    text-decoration:none;
+    color:white;
+}
 
-        button:hover{
-            background:#333;
-            transform:scale(1.02);
-        }
+.back{ background:rgba(255,255,255,0.2); }
+.logout{ background:red; }
 
-        /* SUCCESS MESSAGE */
-
-        .message{
-            padding:20px;
-            border-radius:18px;
-            margin-bottom:20px;
-            text-align:center;
-            animation:popup 0.5s ease;
-        }
-
-        .success{
-            background:linear-gradient(135deg, #28a745, #43d66c);
-            color:white;
-            box-shadow:0 5px 20px rgba(40,167,69,0.4);
-        }
-
-        .error{
-            background:linear-gradient(135deg, #dc3545, #ff6b81);
-            color:white;
-            box-shadow:0 5px 20px rgba(220,53,69,0.4);
-        }
-
-        /* CHECKMARK */
-
-        .checkmark-circle{
-            width:80px;
-            height:80px;
-            border-radius:50%;
-            background:rgba(255,255,255,0.2);
-            margin:0 auto 15px;
-            display:flex;
-            justify-content:center;
-            align-items:center;
-            animation:bounce 0.8s ease;
-        }
-
-        .checkmark{
-            font-size:40px;
-            font-weight:bold;
-        }
-
-        @keyframes popup{
-            from{
-                opacity:0;
-                transform:scale(0.7);
-            }
-            to{
-                opacity:1;
-                transform:scale(1);
-            }
-        }
-
-        @keyframes bounce{
-            0%{
-                transform:scale(0.5);
-            }
-            50%{
-                transform:scale(1.2);
-            }
-            100%{
-                transform:scale(1);
-            }
-        }
-
-        /* BACK BUTTON */
-
-        .back{
-            display:block;
-            text-align:center;
-            margin-top:25px;
-            padding:12px;
-            border-radius:10px;
-            background:#111;
-            color:white;
-            text-decoration:none;
-            font-weight:600;
-            transition:0.3s;
-        }
-
-        .back:hover{
-            background:#333;
-            transform:scale(1.02);
-        }
-
-        @media(max-width:500px){
-
-            .container{
-                width:100%;
-                padding:20px;
-            }
-
-        }
-
-    </style>
+</style>
 
 </head>
 
@@ -248,98 +233,53 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
 <div class="container">
 
-    <h2>👕 Add Clothing Brand</h2>
+<h2>👕 Add Clothing Product</h2>
 
-    <!-- MESSAGE -->
-    <?php if($message != ""): ?>
+<?php if($message != ""): ?>
+    <div class="message <?php echo $message_type; ?>">
+        <?php echo $message; ?>
+    </div>
+<?php endif; ?>
 
-        <div class="message <?php echo $message_type; ?>">
+<form method="POST">
 
-            <?php if($message_type == "success"): ?>
+<label>Brand Name</label>
+<input type="text" name="brand_name" required>
 
-                <div class="checkmark-circle">
-                    <div class="checkmark">✔</div>
-                </div>
+<label>Category</label>
+<select name="category" required>
+<option>T-shirt</option>
+<option>Hoodie</option>
+<option>Pants</option>
+<option>Jacket</option>
+</select>
 
-            <?php endif; ?>
+<label>Color</label>
+<select name="color" required>
+<option>Black</option>
+<option>White</option>
+<option>Red</option>
+</select>
 
-            <h3><?php echo $message; ?></h3>
+<label>Size</label>
+<select name="size" required>
+<option>S</option>
+<option>M</option>
+<option>L</option>
+</select>
 
-        </div>
+<label>Price</label>
+<input type="number" name="price" required>
 
-    <?php endif; ?>
+<label>Stock</label>
+<input type="number" name="stock" required>
 
-    <!-- FORM -->
-    <form method="POST">
+<button type="submit">Add Product</button>
 
-        <label>Brand Name</label>
-        <input 
-            type="text"
-            name="brand_name"
-            placeholder="Enter brand name"
-            required
-        >
+</form>
 
-        <label>Category</label>
-        <select name="category" required>
-
-            <option value="">-- Select Category --</option>
-            <option>T-shirt</option>
-            <option>Hoodie</option>
-            <option>Pants</option>
-            <option>Jacket</option>
-            <option>Croptop</option>
-            <option>Dress</option>
-            <option>Shoes</option>
-            <option>Jersey</option>
-            <option>Baggy Pants</option>
-
-        </select>
-
-        <label>Color</label>
-        <select name="color" required>
-
-            <option value="">-- Select Color --</option>
-            <option>Black</option>
-            <option>White</option>
-            <option>Red</option>
-            <option>Pink</option>
-            <option>Skyblue</option>
-            <option>Gray</option>
-            <option>Maroon</option>
-            <option>Dark Blue</option>
-
-        </select>
-
-        <label>Size</label>
-        <select name="size" required>
-
-            <option value="">-- Select Size --</option>
-            <option>XS</option>
-            <option>S</option>
-            <option>M</option>
-            <option>L</option>
-            <option>XL</option>
-
-        </select>
-
-        <label>Price</label>
-        <input 
-            type="number"
-            step="0.01"
-            name="price"
-            placeholder="Enter price"
-            required
-        >
-
-        <button type="submit">➕ Add Brand</button>
-
-    </form>
-
-    <!-- BACK BUTTON -->
-    <a href="index.php" class="back">
-        ← Back to List
-    </a>
+<a class="back" href="index.php">Back</a>
+<a class="logout" href="logout.php">Logout</a>
 
 </div>
 
