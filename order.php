@@ -247,7 +247,8 @@ button:hover{
         ← Back to Dashboard
 
     </a>
-
+header("Location: customer_dashboard.php");
+exit();
 </div>
 
 </body>

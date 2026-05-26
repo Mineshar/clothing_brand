@@ -216,7 +216,6 @@ body{
         ⚠️ Are you sure you want to delete ALL products?<br><br>
 
 
-
     </div>
 
     <!-- 🔥 BUTTONS -->
